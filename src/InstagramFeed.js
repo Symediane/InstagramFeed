@@ -62,6 +62,34 @@
         });
     }
 
+    function setWithExpiry(key, value, ttl) {
+        var now = new Date();
+        var item = {
+            value: value,
+            expiry: now.getTime() + ttl
+        };
+        localStorage.setItem(key, JSON.stringify(item));
+    }
+
+    function getWithExpiry(key) {
+        var itemStr = localStorage.getItem(key);
+
+        if (!itemStr) {
+            return null;
+        }
+
+        var item = JSON.parse(itemStr);
+        var now = new Date();
+
+        if (now.getTime() > item.expiry) {
+            localStorage.removeItem(key);
+            return null;
+        }
+
+        return item.value;
+    }
+
+
     return function(opts) {
         this.options = Object.assign({}, defaults);
         this.options = Object.assign(this.options, opts);
@@ -85,37 +113,46 @@
                 xhr = new XMLHttpRequest();
 
             var _this = this;
-            xhr.onload = function(e) {
-                if (xhr.readyState === 4) {
-                    if (xhr.status === 200) {
-                        try{
-                            var data = xhr.responseText.split("window._sharedData = ")[1].split("<\/script>")[0];
-                        }catch(error){
-                            _this.options.on_error("InstagramFeed: It looks like the profile you are trying to fetch is age restricted. See https://github.com/jsanahuja/InstagramFeed/issues/26", 3);
-                            return;
+
+            var instaData = getWithExpiry('instaData');
+
+            if (instaData === null) {
+                xhr.onload = function(e) {
+                    if (xhr.readyState === 4) {
+                        if (xhr.status === 200) {
+                            try{
+                                var data = xhr.responseText.split("window._sharedData = ")[1].split("<\/script>")[0];
+                            }catch(error){
+                                _this.options.on_error("InstagramFeed: It looks like the profile you are trying to fetch is age restricted. See https://github.com/jsanahuja/InstagramFeed/issues/26", 3);
+                                return;
+                            }
+                            data = JSON.parse(data.substr(0, data.length - 1));
+                            data = data.entry_data.ProfilePage || data.entry_data.TagPage;
+                            if(typeof data === "undefined"){
+                                _this.options.on_error("InstagramFeed: It looks like YOUR network has been temporary banned because of too many requests. See https://github.com/jsanahuja/jquery.instagramFeed/issues/25", 4);
+                                return;
+                            }
+                            data = data[0].graphql.user || data[0].graphql.hashtag;
+                            // 43200000 ms = 12h
+                            setWithExpiry('instaData', data, 43200000);
+                            callback(data, _this);
+                        } else {
+                            _this.options.on_error("InstagramFeed: Unable to fetch the given user/tag. Instagram responded with the status code: " + xhr.statusText, 5);
                         }
-                        data = JSON.parse(data.substr(0, data.length - 1));
-                        data = data.entry_data.ProfilePage || data.entry_data.TagPage;
-                        if(typeof data === "undefined"){
-                            _this.options.on_error("InstagramFeed: It looks like YOUR network has been temporary banned because of too many requests. See https://github.com/jsanahuja/jquery.instagramFeed/issues/25", 4);
-                            return;
-                        }
-                        data = data[0].graphql.user || data[0].graphql.hashtag;
-                        callback(data, _this);
-                    } else {
-                        _this.options.on_error("InstagramFeed: Unable to fetch the given user/tag. Instagram responded with the status code: " + xhr.statusText, 5);
                     }
-                }
-            };
-            xhr.open("GET", url, true);
-            xhr.send();
+                };
+                xhr.open("GET", url, true);
+                xhr.send();
+            } else {
+                callback(instaData, _this);
+            }
         };
 
         this.parse_caption = function(igobj, data) {
             if (
-                typeof igobj.node.edge_media_to_caption.edges[0] !== "undefined" && 
-                typeof igobj.node.edge_media_to_caption.edges[0].node !== "undefined" && 
-                typeof igobj.node.edge_media_to_caption.edges[0].node.text !== "undefined" && 
+                typeof igobj.node.edge_media_to_caption.edges[0] !== "undefined" &&
+                typeof igobj.node.edge_media_to_caption.edges[0].node !== "undefined" &&
+                typeof igobj.node.edge_media_to_caption.edges[0].node.text !== "undefined" &&
                 igobj.node.edge_media_to_caption.edges[0].node.text !== null
             ) {
                 return igobj.node.edge_media_to_caption.edges[0].node.text;
