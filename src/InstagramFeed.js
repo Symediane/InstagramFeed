@@ -133,8 +133,8 @@
                                 return;
                             }
                             data = data[0].graphql.user || data[0].graphql.hashtag;
-                            // 43200000 ms = 12h
-                            setWithExpiry('instaData', data, 43200000);
+                            // 7200000 ms = 2h
+                            setWithExpiry('instaData', data, 7200000);
                             callback(data, _this);
                         } else {
                             _this.options.on_error("InstagramFeed: Unable to fetch the given user/tag. Instagram responded with the status code: " + xhr.statusText, 5);
